@@ -1,0 +1,89 @@
+services:
+  postgres:
+    build: ./db
+    container_name: telemetry_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: telemetria
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5 --auth-local=md5"
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telemetria"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: telemetry_rabbitmq
+    restart: always
+    ports:
+      - "5674:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  backend:
+    build: ./backend
+    container_name: telemetry_backend
+    restart: always
+    environment:
+      DB_URL: postgres://postgres:postgres@postgres:5432/telemetria?sslmode=disable
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  consumer:
+    build: ./middleware
+    container_name: consumer
+    restart: always
+    environment:
+      DB_URL: postgres://postgres:postgres@postgres:5432/telemetria?sslmode=disable
+      RABBIT_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  k6:
+    image: grafana/k6
+    container_name: telemetry_loadtest
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sleep 25; exec k6 run /scripts/loadtest/loadtest.js"]
+    volumes:
+      - ./:/scripts
+    depends_on:
+      backend:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+
+volumes:
+  postgres_data:
+  rabbitmq_data:

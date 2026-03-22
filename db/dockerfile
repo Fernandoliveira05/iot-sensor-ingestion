@@ -1,0 +1,13 @@
+# Use a imagem oficial do PostgreSQL
+FROM postgres:16
+
+# Defina variáveis de ambiente caso queira customizar as configurações
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+ENV POSTGRES_DB=telemetria
+
+# Caso você queira executar algum script de inicialização ao iniciar o contêiner
+COPY init.sql /docker-entrypoint-initdb.d/
+
+# Expondo a porta 5432
+EXPOSE 5432
